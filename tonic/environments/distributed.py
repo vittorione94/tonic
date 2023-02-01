@@ -4,6 +4,9 @@ import multiprocessing
 
 import numpy as np
 
+# https://medium.com/devopss-hole/python-multiprocessing-pickle-issue-e2d35ccf96a9
+multiprocessing.set_start_method('fork')
+
 
 class Sequential:
     '''A group of environments used in sequence.'''
@@ -53,8 +56,8 @@ class Sequential:
         infos = dict(
             observations=np.array(next_observations, np.float32),
             rewards=np.array(rewards, np.float32),
-            resets=np.array(resets, np.bool),
-            terminations=np.array(terminations, np.bool))
+            resets=np.array(resets, bool),
+            terminations=np.array(terminations, bool))
         return observations, infos
 
     def render(self, mode='human', *args, **kwargs):
@@ -65,6 +68,22 @@ class Sequential:
         if mode != 'human':
             return np.array(outs)
 
+
+
+def proc(environment_builder, max_episode_steps, workers_per_group, output_queue, action_pipe, index, seed):
+    '''Process holding a sequential group of environments.'''
+    envs = Sequential(
+        environment_builder, max_episode_steps,
+        workers_per_group)
+    envs.initialize(seed)
+
+    observations = envs.start()
+    output_queue.put((index, observations))
+
+    while True:
+        actions = action_pipe.recv()
+        out = envs.step(actions)
+        output_queue.put((index, out))
 
 class Parallel:
     '''A group of sequential environments used in parallel.'''
@@ -79,21 +98,6 @@ class Parallel:
         self.max_episode_steps = max_episode_steps
 
     def initialize(self, seed):
-        def proc(action_pipe, index, seed):
-            '''Process holding a sequential group of environments.'''
-            envs = Sequential(
-                self.environment_builder, self.max_episode_steps,
-                self.workers_per_group)
-            envs.initialize(seed)
-
-            observations = envs.start()
-            self.output_queue.put((index, observations))
-
-            while True:
-                actions = action_pipe.recv()
-                out = envs.step(actions)
-                self.output_queue.put((index, out))
-
         dummy_environment = self.environment_builder()
         self.observation_space = dummy_environment.observation_space
         self.action_space = dummy_environment.action_space
@@ -108,9 +112,14 @@ class Parallel:
             self.action_pipes.append(pipe)
             group_seed = seed + i * self.workers_per_group
             process = multiprocessing.Process(
-                target=proc, args=(worker_end, i, group_seed))
+
+                target=proc, args=(self.environment_builder, 
+                    self.max_episode_steps, 
+                    self.workers_per_group, 
+                    self.output_queue,worker_end, i, group_seed))
             process.daemon = True
             process.start()
+
 
     def start(self):
         '''Used once to get the initial observations.'''
@@ -127,9 +136,9 @@ class Parallel:
         self.rewards_list = np.zeros(
             (self.worker_groups, self.workers_per_group), np.float32)
         self.resets_list = np.zeros(
-            (self.worker_groups, self.workers_per_group), np.bool)
+            (self.worker_groups, self.workers_per_group), bool)
         self.terminations_list = np.zeros(
-            (self.worker_groups, self.workers_per_group), np.bool)
+            (self.worker_groups, self.workers_per_group), bool)
 
         return np.concatenate(self.observations_list)
 
