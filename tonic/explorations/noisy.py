@@ -86,3 +86,45 @@ class OrnsteinUhlenbeckActionNoise:
     def update(self, resets):
         if self.noises is not None:
             self.noises *= (1. - resets)[:, None]
+
+
+class SimulateActionNoise:
+    def __init__(
+        self, scale=0.1, clip=2, theta=.15, dt=1e-2, start_steps=20000
+    ):
+        self.scale = scale
+        self.clip = clip
+        self.theta = theta
+        self.dt = dt
+        self.start_steps = start_steps
+
+    def initialize(self, policy, action_space, seed=None):
+        self.policy = policy
+        self.action_size = action_space.shape[0]
+        self.np_random = np.random.RandomState(seed)
+        self.noises = None
+
+    def __call__(self, observations, steps):
+        if steps > self.start_steps:
+            actions = self.policy(observations)
+
+            if self.noises is None:
+                self.noises = np.zeros_like(actions)
+
+            rate = np.exp(-dt / theta)
+            scale = scale * np.sqrt(1-rate*rate)
+
+            noises = self.np_random.normal(size=actions.shape)
+            noises = np.clip(noises, -self.clip, self.clip)
+
+            self.noises = rate * noises + scale * noises
+            actions = (actions + self.noises).astype(np.float32)
+            actions = np.clip(actions, -1, 1)
+        else:
+            shape = (len(observations), self.action_size)
+            actions = self.np_random.uniform(-1, 1, shape)
+        return actions
+
+    def update(self, resets):
+        if self.noises is not None:
+            self.noises *= (1. - resets)[:, None]
