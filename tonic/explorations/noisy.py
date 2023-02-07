@@ -117,7 +117,7 @@ class SimulateActionNoise:
             noises = self.np_random.normal(size=actions.shape)
             noises = np.clip(noises, -self.clip, self.clip)
 
-            self.noises = rate * noises + scale * noises
+            self.noises = rate * self.noises + scale * noises
             actions = (actions + self.noises).astype(np.float32)
             actions = np.clip(actions, -1, 1)
         else:

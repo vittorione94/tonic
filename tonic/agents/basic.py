@@ -135,11 +135,9 @@ class SimulateActionNoise(agents.Agent):
     def _next_actions(self, actions):
         rate = np.exp(-self.dt / self.theta);
         scale = self.scale * np.sqrt(1-rate*rate);
-
         noises = self.np_random.normal(size=actions.shape)
         noises = np.clip(noises, -self.clip, self.clip)
-        
-        next_actions =  rate * noises + scale * noises
+        next_actions =  rate * actions + scale * noises
         next_actions = np.clip(next_actions, -1, 1)
         return next_actions
 
