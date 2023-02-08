@@ -126,8 +126,8 @@ class SimulateActionNoise:
             if self.noises is None:
                 self.noises = np.zeros_like(shape)
 
-            rate = np.exp(-self.dt / self.theta)
-            scale = self.scale * np.sqrt(1-rate*rate)
+            rate = np.exp(-self.dt / 0.5)
+            scale = 5 * np.sqrt(1-rate*rate)
             noises = self.np_random.normal(size=shape)
             noises = np.clip(noises, -self.clip, self.clip)
             actions =  rate * self.noises + scale * noises
