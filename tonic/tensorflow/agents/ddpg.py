@@ -73,7 +73,7 @@ class DDPG(agents.Agent):
         if self.replay.ready(steps):
             self._update(steps)
 
-        self.exploration.update(resets)
+        self.exploration.update(resets, observations)
 
     @tf.function
     def _greedy_actions(self, observations):
