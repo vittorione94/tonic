@@ -1,6 +1,7 @@
 '''Script used to play with trained agents.'''
 
 import argparse
+import copy
 import os
 
 import numpy as np
@@ -70,10 +71,10 @@ def play_control_suite(agent, environment):
         '''Wrapper used to plug a Tonic environment in a dm_control viewer.'''
 
         def __init__(self, environment):
+            print(environment.unwrapped.environment)
             self.environment = environment
-            self.unwrapped = environment.unwrapped
+            self.unwrapped = self.environment.unwrapped
             self.action_spec = self.unwrapped.environment.action_spec
-            self.physics = self.unwrapped.environment.physics
             self.infos = None
             self.steps = 0
             self.episodes = 0
@@ -81,6 +82,18 @@ def play_control_suite(agent, environment):
             self.max_reward = -float('inf')
             self.global_min_reward = float('inf')
             self.global_max_reward = -float('inf')
+
+        @property
+        def physics(self):
+            """Returns a `weakref.ProxyType` pointing to the current `mjcf.Physics`.
+
+            Note that the underlying `mjcf.Physics` will be destroyed whenever the MJCF
+            model is recompiled. It is therefore unsafe for external objects to hold a
+            reference to `environment.physics`. Attempting to access attributes of a
+            dead `Physics` instance will result in a `ReferenceError`.
+            """
+            return self.unwrapped.environment.physics
+
 
         def reset(self):
             '''Mimics a dm_control reset for the viewer.'''
@@ -100,6 +113,12 @@ def play_control_suite(agent, environment):
             assert not np.isnan(actions.sum())
             ob, rew, term, _ = self.environment.step(actions[0])
 
+            # print(ob)
+            # print(rew)
+            # print(term)
+
+            # print(ob.shape)
+            # print("obs", ob)
             self.score += rew
             self.length += 1
             self.min_reward = min(self.min_reward, rew)
@@ -140,6 +159,7 @@ def play_control_suite(agent, environment):
         return agent.test_step(environment.observations, environment.steps)
 
     # Launch the viewer with the wrapped environment and policy.
+    print(environment.physics)
     viewer.launch(environment, policy)
 
 

@@ -35,7 +35,12 @@ def control_suite_environment(*args, **kwargs):
         domain, task = name.split('-')
         environment = ControlSuiteEnvironment(
             domain_name=domain, task_name=task, *args, **kwargs)
-        time_limit = int(environment.environment._step_limit)
+
+        # print(environment.environment)
+
+
+        time_limit = int(environment.environment._time_limit / environment.environment.control_timestep())
+        # time_limit = int(environment.environment._step_limit)
         return gym.wrappers.TimeLimit(environment, time_limit)
 
     return build_environment(_builder, *args, **kwargs)
