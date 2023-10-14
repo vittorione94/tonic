@@ -124,6 +124,8 @@ class ControlSuiteEnvironment(gym.core.Env):
             observation = _flatten_observation(time_step.observation)
             reward = time_step.reward
 
+            reward = np.nan_to_num(reward)
+
             # Remove terminations from timeouts.
             done = time_step.last()
             if done:
