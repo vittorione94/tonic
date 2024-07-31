@@ -280,3 +280,77 @@ class ExpectedSARSA:
         self.optimizer.step()
 
         return dict(loss=loss.detach(), q=values.detach())
+
+    def __init__(
+        self, optimizer=None, target_action_noise=None, gradient_clip=0
+    ):
+        self.optimizer = optimizer or (
+            lambda params: torch.optim.Adam(params, lr=3e-4))
+        self.target_action_noise = target_action_noise or \
+            TargetActionNoise(scale=0.2, clip=0.5)
+        self.gradient_clip = gradient_clip
+
+    def initialize(self, model):
+        self.model = model
+        variables_1 = self.model.critic_1.trainable_variables
+        variables_2 = self.model.critic_2.trainable_variables
+        self.variables = variables_1 + variables_2
+
+    def __call__(
+        self, observations, actions, next_observations, rewards, discounts
+    ):
+        with torch.no_grad():
+            next_actions = self.model.target_actor(next_observations)
+            next_value_distributions_1 = self.model.target_critic_1(
+                next_observations, next_actions)
+            next_value_distributions_2 = self.model.target_critic_2(
+                next_observations, next_actions)
+            values = next_value_distributions.values
+            returns = rewards[:, None] + discounts[:, None] * values
+            targets = next_value_distributions.project(returns)
+
+        self.optimizer.zero_grad()
+        value_distributions = self.model.critic(observations, actions)
+        log_probabilities = torch.nn.functional.log_softmax(
+            value_distributions.logits, dim=-1)
+        loss = -(targets * log_probabilities).sum(dim=-1).mean()
+
+        loss.backward()
+        if self.gradient_clip > 0:
+            torch.nn.utils.clip_grad_norm_(self.variables, self.gradient_clip)
+        self.optimizer.step()
+
+
+        
+
+        values = next_value_distributions_1.values
+        returns = rewards[:, None] + discounts[:, None] * values
+        targets_1 = next_value_distributions_1.project(returns)
+        targets_2 = next_value_distributions_2.project(returns)
+        next_values_1 = next_value_distributions_1.mean()
+        next_values_2 = next_value_distributions_2.mean()
+        twin_next_values = tf.concat(
+            [next_values_1[None], next_values_2[None]], axis=0)
+        indices = tf.argmin(twin_next_values, axis=0, output_type=tf.int32)
+        twin_targets = tf.concat([targets_1[None], targets_2[None]], axis=0)
+        batch_size = tf.shape(observations)[0]
+        indices = tf.stack([indices, tf.range(batch_size)], axis=-1)
+        targets = tf.gather_nd(twin_targets, indices)
+
+        with tf.GradientTape() as tape:
+            value_distributions_1 = self.model.critic_1(observations, actions)
+            losses_1 = tf.nn.softmax_cross_entropy_with_logits(
+                logits=value_distributions_1.logits, labels=targets)
+            value_distributions_2 = self.model.critic_2(observations, actions)
+            losses_2 = tf.nn.softmax_cross_entropy_with_logits(
+                logits=value_distributions_2.logits, labels=targets)
+            loss = tf.reduce_mean(losses_1) + tf.reduce_mean(losses_2)
+
+        gradients = tape.gradient(loss, self.variables)
+        if self.gradient_clip > 0:
+            gradients = tf.clip_by_global_norm(
+                gradients, self.gradient_clip)[0]
+        self.optimizer.apply_gradients(zip(gradients, self.variables))
+
+        return dict(loss=loss, q1=value_distributions_1.mean(),
+                    q2=value_distributions_2.mean())

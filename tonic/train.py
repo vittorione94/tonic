@@ -94,6 +94,8 @@ def train(
     if not agent:
         raise ValueError('No agent specified.')
     agent = eval(agent)
+    print(environment.observation_space)
+    print(environment.action_space)
     agent.initialize(
         observation_space=environment.observation_space,
         action_space=environment.action_space, seed=seed)

@@ -2,7 +2,7 @@
 
 import os
 
-import gym.wrappers
+import gymnasium as gym
 import numpy as np
 
 from tonic import environments
@@ -37,9 +37,22 @@ def control_suite_environment(*args, **kwargs):
             domain_name=domain, task_name=task, *args, **kwargs)
 
         # print(environment.environment)
+        # time_limit = int(environment.environment._time_limit / environment.environment.control_timestep())
+        time_limit = int(environment.environment._step_limit)
+        return gym.wrappers.TimeLimit(environment, time_limit)
+
+    return build_environment(_builder, *args, **kwargs)
 
 
-        time_limit = int(environment.environment._time_limit / environment.environment.control_timestep())
+def control_suite_composer_environment(*args, **kwargs):
+    '''Returns a wrapped Control Suite environment.'''
+
+    def _builder(*args, **kwargs):
+        environment = ControlSuiteComposerEnvironment(
+             *args, **kwargs)
+
+        # print(environment.environment)
+        time_limit = environment.environment._time_limit
         # time_limit = int(environment.environment._step_limit)
         return gym.wrappers.TimeLimit(environment, time_limit)
 
@@ -151,7 +164,7 @@ class ControlSuiteEnvironment(gym.core.Env):
 
         return observation, reward, done, {}
 
-    def reset(self):
+    def reset(self, seed=None, options=None):
         time_step = self.environment.reset()
         self.last_time_step = time_step
         return _flatten_observation(time_step.observation)
@@ -163,7 +176,115 @@ class ControlSuiteEnvironment(gym.core.Env):
             height=height, width=width, camera_id=camera_id)
 
 
+class ControlSuiteComposerEnvironment(gym.core.Env):
+    '''Turns a Control Suite environment into a Gym environment.'''
+
+    def __init__(
+        self, name="", task_kwargs=None, visualize_reward=True,
+        environment_kwargs=None
+    ):
+        from dm_control import composer
+        from dm_control.locomotion import arenas
+        from dm_control.locomotion.tasks.reference_pose import tracking
+        from dm_control.locomotion.walkers import dog
+
+        # from pathlib import Path
+        # home = str(Path.home())
+        # walker_type = dog.Dog
+        arena = arenas.Floor()
+        # task = tracking.MultiClipMocapTracking(
+        #     walker=walker_type,
+        #     arena=arena,
+        #     ref_path=os.path.join(home, "Documents/dog_control/dm_control/dm_control/locomotion/mocap/dog_mocap.h5"), # path to h5 file
+        #     dataset='dog_walk_tiny',
+        #     ref_steps=(1, 2, 3, 4, 5),
+        #     min_steps=15,
+        #     ghost_offset=(0,0,0),
+        #     reward_type="termination_reward",
+        #     body_error_multiplier=3.0,
+        #     always_init_at_clip_start=False,
+        #     termination_error_threshold=0.2
+        # )
+        from dm_control.locomotion.walkers import cmu_humanoid
+        walker_type = cmu_humanoid.CMUHumanoidPositionControlledV2020
+        from dm_control.locomotion.mocap import cmu_mocap_data
+        task = tracking.MultiClipMocapTracking(
+            walker=walker_type,
+            arena=arena,
+            ref_path=cmu_mocap_data.get_path_for_cmu(version='2020'),
+            dataset='all',
+            ref_steps=(1, 2, 3, 4, 5),
+            min_steps=10,
+            reward_type="termination_reward",
+            always_init_at_clip_start=False,
+            ghost_offset=(0,0,0),
+            termination_error_threshold=0.2
+        )
+        self.environment = composer.Environment(task=task,
+                                random_state=None,
+                                strip_singleton_obs_buffer_dim=True)
+
+        # Create the observation space.
+        observation_spec = self.environment.observation_spec()
+        dim = sum([int(np.prod(spec.shape))
+                   for spec in observation_spec.values()])
+        high = np.full(dim, np.inf, np.float32)
+        self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
+
+        # Create the action space.
+        action_spec = self.environment.action_spec()
+        self.action_space = gym.spaces.Box(
+            action_spec.minimum, action_spec.maximum, dtype=np.float32)
+
+    def seed(self, seed):
+        self.environment.task._random = np.random.RandomState(seed)
+
+    def step(self, action):
+        try:
+            time_step = self.environment.step(action)
+            observation = _flatten_observation(time_step.observation)
+            reward = time_step.reward
+
+            reward = np.nan_to_num(reward)
+
+            # Remove terminations from timeouts.
+            done = time_step.last()
+            if done:
+                done = self.environment._task.should_terminate_episode(self.environment.physics)
+                done = done is not None
+
+            self.last_time_step = time_step
+
+        # In case MuJoCo crashed.
+        except Exception as e:
+            path = logger.get_path()
+            os.makedirs(path, exist_ok=True)
+            save_path = os.path.join(path, 'crashes.txt')
+            error = str(e)
+            with open(save_path, 'a') as file:
+                file.write(error + '\n')
+            logger.error(error)
+            observation = _flatten_observation(self.last_time_step.observation)
+            observation = np.zeros_like(observation)
+            reward = 0.
+            done = True
+
+        return observation, reward, done, {}
+
+    def reset(self, seed=None, options=None):
+        time_step = self.environment.reset()
+        self.last_time_step = time_step
+        return _flatten_observation(time_step.observation)
+
+    def render(self, mode='rgb_array', height=800, width=800, camera_id=0):
+        '''Returns RGB frames from a camera.'''
+        assert mode == 'rgb_array'
+        return self.environment.physics.render(
+            height=height, width=width, camera_id=camera_id)
+
+
 # Aliases.
 Gym = gym_environment
 Bullet = bullet_environment
 ControlSuite = control_suite_environment
+ControlSuiteComposer = control_suite_composer_environment

@@ -11,6 +11,7 @@ class MLP(torch.nn.Module):
     def initialize(self, input_size):
         sizes = [input_size] + list(self.sizes)
         layers = []
+        print(self.activation)
         for i in range(len(sizes) - 1):
             layers += [torch.nn.Linear(sizes[i], sizes[i + 1]),
                        getattr(torch.nn, self.activation)()]

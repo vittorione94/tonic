@@ -8,11 +8,11 @@ def default_model():
     return models.ActorTwinCriticWithTargets(
         actor=models.Actor(
             encoder=models.ObservationEncoder(),
-            torso=models.MLP((256, 256), torch.nn.ReLU),
+            torso=models.MLP((256, 256), "ReLU"),
             head=models.DeterministicPolicyHead()),
         critic=models.Critic(
             encoder=models.ObservationActionEncoder(),
-            torso=models.MLP((256, 256), torch.nn.ReLU),
+            torso=models.MLP((256, 256), "ReLU"),
             head=models.ValueHead()),
         observation_normalizer=normalizers.MeanStd())
 

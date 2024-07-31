@@ -23,6 +23,7 @@ class Sequential:
             environment.seed(seed + i)
 
     def start(self):
+        print(self.environments)
         '''Used once to get the initial observations.'''
         observations = [env.reset() for env in self.environments]
         self.lengths = np.zeros(len(self.environments), int)
@@ -63,7 +64,7 @@ class Sequential:
     def render(self, mode='human', *args, **kwargs):
         outs = []
         for env in self.environments:
-            out = env.render(mode=mode, *args, **kwargs)
+            out = env.render(*args, **kwargs)
             outs.append(out)
         if mode != 'human':
             return np.array(outs)
